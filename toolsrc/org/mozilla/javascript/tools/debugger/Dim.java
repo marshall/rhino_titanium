@@ -135,14 +135,19 @@ public class Dim {
     private String evalRequest;
 
     /**
-     * The stack frame in which to evaluate {@link #evalRequest}.
+     * The scope that evalRequest will be evaluated in
      */
-    private StackFrame evalFrame;
+    private Scriptable evalScope;
+
+    /**
+     * The "this" object that evalRequest will be evaluated with
+     */
+    private Scriptable evalThisObj;
 
     /**
      * The result of evaluating {@link #evalRequest}.
      */
-    private String evalResult;
+    private Object evalResult;
 
     /**
      * Whether the debugger should break when a script exception is thrown.
@@ -247,6 +252,17 @@ public class Dim {
         this.contextFactory = factory;
         this.listener = new DimIProxy(this, IPROXY_LISTEN);
         factory.addListener(this.listener);
+    }
+
+    /**
+     * Attaches the debugger to an existing Context
+     */
+    public void attachTo(Context context) {
+        ContextData contextData = new ContextData();
+        Debugger debugger = new DimIProxy(this, IPROXY_DEBUG);
+        context.setDebugger(debugger, contextData);
+        context.setGeneratingDebug(true);
+        context.setOptimizationLevel(-1);
     }
 
     /**
@@ -564,11 +580,8 @@ public class Dim {
         }
     }
 
-    /**
-     * Evaluates the given script.
-     */
-    public String eval(String expr) {
-        String result = "undefined";
+    public Object eval(Scriptable scope, Scriptable thisObj, String expr) {
+        Object result = Undefined.instance;
         if (expr == null) {
             return result;
         }
@@ -576,15 +589,15 @@ public class Dim {
         if (contextData == null || frameIndex >= contextData.frameCount()) {
             return result;
         }
-        StackFrame frame = contextData.getFrame(frameIndex);
         if (contextData.eventThreadFlag) {
             Context cx = Context.getCurrentContext();
-            result = do_eval(cx, frame, expr);
+            result = do_eval(cx, scope, thisObj, expr);
         } else {
             synchronized (monitor) {
                 if (insideInterruptLoop) {
                     evalRequest = expr;
-                    evalFrame = frame;
+                    evalScope = scope;
+                    evalThisObj = thisObj;
                     monitor.notify();
                     do {
                         try {
@@ -599,6 +612,19 @@ public class Dim {
             }
         }
         return result;
+    }
+
+    /**
+     * Evaluates the given script, and returns it's value in string format
+     */
+    public Object eval(String expr) {
+        String result = "undefined";
+        ContextData contextData = currentContextData();
+        if (contextData == null || frameIndex >= contextData.frameCount()) {
+            return result;
+        }
+        StackFrame frame = contextData.getFrame(frameIndex);
+        return eval(frame.scope, frame.thisObj, expr);
     }
 
     /**
@@ -817,11 +843,12 @@ interruptedCheck:
                                 if (evalRequest != null) {
                                     this.evalResult = null;
                                     try {
-                                        evalResult = do_eval(cx, evalFrame,
+                                        evalResult = do_eval(cx, evalScope, evalThisObj,
                                                              evalRequest);
                                     } finally {
                                         evalRequest = null;
-                                        evalFrame = null;
+                                        evalScope = null;
+                                        evalThisObj = null;
                                         monitor.notify();
                                     }
                                     continue;
@@ -874,10 +901,10 @@ interruptedCheck:
     }
 
     /**
-     * Evaluates script in the given stack frame.
+     * Evaluates script in the given scope with the given thisObj
      */
-    private static String do_eval(Context cx, StackFrame frame, String expr) {
-        String resultString;
+    private static Object do_eval(Context cx, Scriptable scope, Scriptable thisObj, String expr) {
+        Object result;
         Debugger saved_debugger = cx.getDebugger();
         Object saved_data = cx.getDebuggerContextData();
         int saved_level = cx.getOptimizationLevel();
@@ -887,24 +914,15 @@ interruptedCheck:
         cx.setGeneratingDebug(false);
         try {
             Callable script = (Callable)cx.compileString(expr, "", 0, null);
-            Object result = script.call(cx, frame.scope, frame.thisObj,
-                                        ScriptRuntime.emptyArgs);
-            if (result == Undefined.instance) {
-                resultString = "";
-            } else {
-                resultString = ScriptRuntime.toString(result);
-            }
+            result = script.call(cx, scope, thisObj, ScriptRuntime.emptyArgs);
         } catch (Exception exc) {
-            resultString = exc.getMessage();
+            result = exc;
         } finally {
             cx.setGeneratingDebug(true);
             cx.setOptimizationLevel(saved_level);
             cx.setDebugger(saved_debugger, saved_data);
         }
-        if (resultString == null) {
-            resultString = "null";
-        }
-        return resultString;
+        return result;
     }
 
     /**
@@ -1181,6 +1199,11 @@ interruptedCheck:
         private Scriptable thisObj;
 
         /**
+         * The args to the current frame
+         */
+        private Object[] args;
+
+        /**
          * Information about the function.
          */
         private FunctionSource fsource;
@@ -1212,6 +1235,7 @@ interruptedCheck:
         public void onEnter(Context cx, Scriptable scope,
                             Scriptable thisObj, Object[] args) {
             contextData.pushFrame(this);
+            this.args = args;
             this.scope = scope;
             this.thisObj = thisObj;
             if (dim.breakOnEnter) {
@@ -1253,6 +1277,7 @@ interruptedCheck:
          */
         public void onExit(Context cx, boolean byThrow,
                            Object resultOrException) {
+            this.args = null;
             if (dim.breakOnReturn && !byThrow) {
                 dim.handleBreakpointHit(this, cx);
             }
@@ -1292,6 +1317,10 @@ interruptedCheck:
          */
         public Object thisObj() {
             return thisObj;
+        }
+
+        public Object[] args() {
+            return args;
         }
 
         /**
