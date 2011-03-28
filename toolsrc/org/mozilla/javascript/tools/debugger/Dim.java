@@ -1492,9 +1492,6 @@ interruptedCheck:
          */
         private SourceInfo(String source, DebuggableScript[] functions,
                              String normilizedUrl) {
-            System.out.println("new SourceInfo, source: " + source +
-                ", functions: " + functions + ", normilizedUrl: " + normilizedUrl);
-
             this.source = source;
             this.url = normilizedUrl;
 
