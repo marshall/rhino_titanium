@@ -1262,7 +1262,16 @@ interruptedCheck:
                 contextData.breakNextLine = false;
             }
 
-            dim.handleBreakpointHit(this, cx);
+            boolean hit = true;
+            Condition condition = fsource.sourceInfo().getCondition(lineno);
+            if (condition != null) {
+                if (!condition.shouldBreak(cx, scope, thisObj)) {
+                    hit = false;
+                }
+            }
+            if (hit) {
+                dim.handleBreakpointHit(this, cx);
+            }
         }
 
         /**
@@ -1392,6 +1401,52 @@ interruptedCheck:
         }
     }
 
+    public static class Condition {
+        public static enum Type
+        {
+            OnTrue, OnValueChange
+        }
+
+        public int hitCount = 1, currentHit = 0;
+        public String condition;
+        public Condition.Type conditionType;
+        public Script compiledCondition;
+        public Object currentConditionValue;
+
+        public Condition(String condition, Condition.Type type)
+        {
+            this.condition = condition;
+            this.conditionType = type;
+        }
+
+        public boolean shouldBreak(Context context, Scriptable scope, Scriptable thisObj)
+        {
+            currentHit++;
+            if (currentHit < hitCount) { return false; }
+            if (condition == null) { return true; }
+            if (compiledCondition == null) {
+                compiledCondition = context.compileString(condition, "<expr>", 1, null);
+            }
+            // Scripts are implicit functions
+            Function fn = (Function) compiledCondition;
+            Object result = fn.call(context, scope, thisObj, ScriptRuntime.emptyArgs);
+                if (conditionType == Type.OnValueChange) {
+                if (result == null && currentConditionValue != null) {
+                    currentConditionValue = null;
+                    return true;
+                } else if (result != null && !result.equals(currentConditionValue)) {
+                    currentConditionValue = result;
+                    return true;
+                }
+            } else if (conditionType == Type.OnTrue) {
+                if (result instanceof Boolean) {
+                    return ((Boolean) result).booleanValue();
+                } else if (result != null) { return Boolean.parseBoolean(result.toString()); }
+            }
+            return false;
+        }
+    }
+
     /**
      * Class to store information about a script source.
      */
@@ -1423,6 +1478,11 @@ interruptedCheck:
         private boolean[] breakpoints;
 
         /**
+         * Array of conditions for each brekapoint (null indicates no condition)
+         */
+        private Condition[] conditions;
+
+        /**
          * Array of FunctionSource objects for the functions in the script.
          */
         private FunctionSource[] functionSources;
@@ -1432,6 +1492,9 @@ interruptedCheck:
          */
         private SourceInfo(String source, DebuggableScript[] functions,
                              String normilizedUrl) {
+            System.out.println("new SourceInfo, source: " + source +
+                ", functions: " + functions + ", normilizedUrl: " + normilizedUrl);
+
             this.source = source;
             this.url = normilizedUrl;
 
@@ -1477,6 +1540,7 @@ interruptedCheck:
                 // No line information
                 this.breakableLines = EMPTY_BOOLEAN_ARRAY;
                 this.breakpoints = EMPTY_BOOLEAN_ARRAY;
+                this.conditions = new Condition[0];
             } else {
                 if (minAll < 0) {
                     // Line numbers can not be negative
@@ -1485,6 +1549,7 @@ interruptedCheck:
                 int linesTop = maxAll + 1;
                 this.breakableLines = new boolean[linesTop];
                 this.breakpoints = new boolean[linesTop];
+                this.conditions = new Condition[linesTop];
                 for (int i = 0; i != N; ++i) {
                     int[] lines = lineArrays[i];
                     if (lines != null && lines.length != 0) {
@@ -1547,6 +1612,7 @@ interruptedCheck:
                 if (old.breakpoints[line]) {
                     this.breakpoints[line] = true;
                 }
+                this.conditions[line] = old.conditions[line];
             }
         }
 
@@ -1586,6 +1652,25 @@ interruptedCheck:
                 }
             }
             return changed;
+        }
+
+        public Condition getCondition(int line) {
+            if (!breakableLine(line)) {
+                throw new IllegalArgumentException(String.valueOf(line));
+            }
+            if (line < this.conditions.length) {
+                return this.conditions[line];
+            }
+            return null;
+        }
+
+        public void setCondition(int line, Condition condition) {
+            if (!breakableLine(line)) {
+                throw new IllegalArgumentException(String.valueOf(line));
+            }
+            synchronized (conditions) {
+                conditions[line] = condition;
+            }
         }
 
         /**

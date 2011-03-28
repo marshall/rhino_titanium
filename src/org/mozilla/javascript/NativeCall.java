@@ -146,6 +146,11 @@ public final class NativeCall extends IdScriptableObject
         throw new IllegalArgumentException(String.valueOf(id));
     }
 
+    public NativeFunction getNativeFunction()
+    {
+        return function;
+    }
+
     private static final int
         Id_constructor   = 1,
         MAX_PROTOTYPE_ID = 1;

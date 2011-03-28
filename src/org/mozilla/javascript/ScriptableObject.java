@@ -2554,6 +2554,11 @@ public abstract class ScriptableObject implements Scriptable, Serializable,
         return slot.setValue(value, this, start);
     }
 
+    public boolean hasAttributes(String name)
+    {
+        return null != getSlot(name, 0, SLOT_QUERY);
+    }
+
     private Slot findAttributeSlot(String name, int index, int accessType)
     {
         Slot slot = getSlot(name, index, accessType);
