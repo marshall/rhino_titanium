@@ -54,7 +54,7 @@ public interface GuiCallback {
      */
     void enterInterrupt(Dim.StackFrame lastFrame,
                         String threadTitle,
-                        String alertMessage);
+                        Throwable scriptException);
 
     /**
      * Returns whether the current thread is the GUI's event thread.

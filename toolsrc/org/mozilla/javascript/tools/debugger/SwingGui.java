@@ -790,14 +790,14 @@ public class SwingGui extends JFrame implements GuiCallback {
      */
     public void enterInterrupt(Dim.StackFrame lastFrame,
                                String threadTitle,
-                               String alertMessage) {
+                               Throwable exception) {
         if (SwingUtilities.isEventDispatchThread()) {
-            enterInterruptImpl(lastFrame, threadTitle, alertMessage);
+            enterInterruptImpl(lastFrame, threadTitle, exception.getMessage());
         } else {
             RunProxy proxy = new RunProxy(this, RunProxy.ENTER_INTERRUPT);
             proxy.lastFrame = lastFrame;
             proxy.threadTitle = threadTitle;
-            proxy.alertMessage = alertMessage;
+            proxy.alertMessage = exception.getMessage();
             SwingUtilities.invokeLater(proxy);
         }
     }
@@ -1090,7 +1090,7 @@ class EvalTextArea
                historyIndex = history.size();
             }
             append("\n");
-            String result = debugGui.dim.eval(text);
+            String result = (String) debugGui.dim.eval(text);
             if (result.length() > 0) {
                 append(result);
                 append("\n");
@@ -2400,7 +2400,7 @@ class MyTableModel extends AbstractTableModel {
             expressions.set(row, expr);
             String result = "";
             if (expr.length() > 0) {
-                result = debugGui.dim.eval(expr);
+                result = (String) debugGui.dim.eval(expr);
                 if (result == null) result = "";
             }
             values.set(row, result);
@@ -2425,7 +2425,7 @@ class MyTableModel extends AbstractTableModel {
             String expr = expressions.get(i);
             String result = "";
             if (expr.length() > 0) {
-                result = debugGui.dim.eval(expr);
+                result = (String) debugGui.dim.eval(expr);
                 if (result == null) result = "";
             } else {
                 result = "";

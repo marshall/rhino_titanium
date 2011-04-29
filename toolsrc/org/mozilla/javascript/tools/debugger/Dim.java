@@ -155,6 +155,11 @@ public class Dim {
     private boolean breakOnExceptions;
 
     /**
+     * A list of exception types to break on
+     */
+    private ArrayList<String> exceptionBreakpoints = new ArrayList<String>();
+
+    /**
      * Whether the debugger should break when a script function is entered.
      */
     private boolean breakOnEnter;
@@ -544,13 +549,36 @@ public class Dim {
      */
     private void handleExceptionThrown(Context cx, Throwable ex,
                                          StackFrame frame) {
-        if (breakOnExceptions) {
-            ContextData cd = frame.contextData();
+        ContextData cd = frame.contextData();
+        if (breakOnExceptions || shouldBreakOnException(ex)) {
             if (cd.lastProcessedException != ex) {
                 interrupted(cx, frame, ex);
                 cd.lastProcessedException = ex;
             }
         }
+    }
+
+    public void addExceptionBreakpoint(String exceptionType) {
+        exceptionBreakpoints.add(exceptionType);
+    }
+
+    public boolean shouldBreakOnException(Throwable exception) {
+        if (exception instanceof JavaScriptException) {
+            JavaScriptException jsException = (JavaScriptException) exception;
+            Object value = jsException.getValue();
+            if (value instanceof Scriptable) {
+                Scriptable error = (Scriptable) value;
+                Object name = error.getPrototype().get("name", error);
+                if (exceptionBreakpoints.contains(name)) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    public void removeExceptionBreakpoint(String exceptionType) {
+        exceptionBreakpoints.remove(exceptionType);
     }
 
     /**
@@ -817,11 +845,6 @@ interruptedCheck:
 
                 final String threadTitle = Thread.currentThread().toString();
                 final String alertMessage;
-                if (scriptException == null) {
-                    alertMessage = null;
-                } else {
-                    alertMessage = scriptException.toString();
-                }
 
                 int returnValue = -1;
                 if (!eventThreadFlag) {
@@ -831,7 +854,7 @@ interruptedCheck:
                         this.evalRequest = null;
                         this.returnValue = -1;
                         callback.enterInterrupt(frame, threadTitle,
-                                                alertMessage);
+                                                scriptException);
                         try {
                             for (;;) {
                                 try {
@@ -864,7 +887,7 @@ interruptedCheck:
                     }
                 } else {
                     this.returnValue = -1;
-                    callback.enterInterrupt(frame, threadTitle, alertMessage);
+                    callback.enterInterrupt(frame, threadTitle, scriptException);
                     while (this.returnValue == -1) {
                         try {
                             callback.dispatchNextGuiEvent();
