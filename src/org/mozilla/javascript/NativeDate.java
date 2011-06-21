@@ -54,7 +54,7 @@ import java.util.SimpleTimeZone;
  * See ECMA 15.9.
  * @author Mike McCabe
  */
-final class NativeDate extends IdScriptableObject
+public final class NativeDate extends IdScriptableObject
 {
     static final long serialVersionUID = -8307438915861678966L;
 
@@ -1680,9 +1680,9 @@ final class NativeDate extends IdScriptableObject
     private static TimeZone thisTimeZone;
     private static double LocalTZA;
     private static DateFormat timeZoneFormatter;
-    private static DateFormat localeDateTimeFormatter;
-    private static DateFormat localeDateFormatter;
-    private static DateFormat localeTimeFormatter;
+    public static DateFormat localeDateTimeFormatter;
+    public static DateFormat localeDateFormatter;
+    public static DateFormat localeTimeFormatter;
 
     private double date;
 }
