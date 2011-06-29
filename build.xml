@@ -118,8 +118,14 @@
     <jar jarfile="${jarfile}"
          basedir="${classes}"
          manifest="src/manifest"
-         compress="${jar-compression}"
-     />
+		 compress="${jar-compression}">
+
+		<include name="**/*"/>
+		<exclude name="**/*.tests"/>
+		<exclude name="benchmarks"/>
+		<exclude name="jstests"/>
+		<exclude name="doctests"/>
+	</jar>
   </target>
 
   <target name="console" depends="jar">

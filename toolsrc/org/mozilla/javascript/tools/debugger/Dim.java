@@ -81,6 +81,11 @@ public class Dim {
     private boolean breakFlag;
 
     /**
+     * A list of contexts to break at the next opportunity
+     */
+    private ArrayList<Context> breakContexts = new ArrayList<Context>();
+
+    /**
      * The ScopeProvider object that provides the scope in which to
      * evaluate script.
      */
@@ -205,6 +210,17 @@ public class Dim {
      */
     public void setBreak() {
         this.breakFlag = true;
+    }
+
+    /**
+     * Tells the debugger to break at the next opportunity for the given Context.
+     */
+    public void setBreakContext(Context context) {
+        synchronized (breakContexts) {
+            if (!breakContexts.contains(context)) {
+                breakContexts.add(context);
+            }
+        }
     }
 
     /**
@@ -1272,6 +1288,7 @@ interruptedCheck:
         public void onLineChange(Context cx, int lineno) {
             this.lineNumber = lineno;
 
+            boolean checkCondition = true;
             if (!breakpoints[lineno] && !dim.breakFlag) {
                 boolean lineBreak = contextData.breakNextLine;
                 if (lineBreak && contextData.stopAtFrameDepth >= 0) {
@@ -1279,17 +1296,28 @@ interruptedCheck:
                                  <= contextData.stopAtFrameDepth);
                 }
                 if (!lineBreak) {
-                    return;
+                    synchronized (dim.breakContexts) {
+                        if (!dim.breakContexts.contains(cx)) {
+                            return;
+                        } else {
+                            dim.breakContexts.remove(cx);
+                        }
+                    }
                 }
                 contextData.stopAtFrameDepth = -1;
                 contextData.breakNextLine = false;
+                checkCondition = false;
+            } else if (dim.breakFlag) {
+                checkCondition = false;
             }
 
             boolean hit = true;
-            Condition condition = fsource.sourceInfo().getCondition(lineno);
-            if (condition != null) {
-                if (!condition.shouldBreak(cx, scope, thisObj)) {
-                    hit = false;
+            if (checkCondition) {
+                Condition condition = fsource.sourceInfo().getCondition(lineno);
+                if (condition != null) {
+                    if (!condition.shouldBreak(cx, scope, thisObj)) {
+                        hit = false;
+                    }
                 }
             }
             if (hit) {
@@ -1453,7 +1481,7 @@ interruptedCheck:
             // Scripts are implicit functions
             Function fn = (Function) compiledCondition;
             Object result = fn.call(context, scope, thisObj, ScriptRuntime.emptyArgs);
-                if (conditionType == Type.OnValueChange) {
+            if (conditionType == Type.OnValueChange) {
                 if (result == null && currentConditionValue != null) {
                     currentConditionValue = null;
                     return true;
