@@ -43,6 +43,8 @@ package org.mozilla.javascript.tools.debugger;
 import org.mozilla.javascript.*;
 import org.mozilla.javascript.debug.*;
 import java.util.*;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 import java.io.*;
 import java.net.URL;
 
@@ -83,7 +85,7 @@ public class Dim {
     /**
      * A list of contexts to break at the next opportunity
      */
-    private ArrayList<Context> breakContexts = new ArrayList<Context>();
+    private ArrayList<Long> breakThreadIds = new ArrayList<Long>();
 
     /**
      * The ScopeProvider object that provides the scope in which to
@@ -199,6 +201,11 @@ public class Dim {
     private DimIProxy listener;
 
     /**
+     * A logger that can be set to see debug statements
+     */
+    private Logger logger = null;
+
+    /**
      * Sets the GuiCallback object to use.
      */
     public void setGuiCallback(GuiCallback callback) {
@@ -213,13 +220,19 @@ public class Dim {
     }
 
     /**
-     * Tells the debugger to break at the next opportunity for the given Context.
+     * Tells the debugger to break at the next opportunity for the given thread ID.
      */
-    public void setBreakContext(Context context) {
-        synchronized (breakContexts) {
-            if (!breakContexts.contains(context)) {
-                breakContexts.add(context);
+    public void setBreakThread(long threadId) {
+        synchronized (breakThreadIds) {
+            if (!breakThreadIds.contains(threadId)) {
+                if (logger != null) {
+                    logger.fine("break when thread enters again: " + threadId);
+                }
+                breakThreadIds.add(threadId);
             }
+        }
+        if (logger != null) {
+            logger.fine("current break thread ids: " + breakThreadIds);
         }
     }
 
@@ -263,6 +276,13 @@ public class Dim {
      */
     public void setBreakOnReturn(boolean breakOnReturn) {
         this.breakOnReturn = breakOnReturn;
+    }
+
+    /**
+     * Sets the debugger that should log debug statements.
+     */
+    public void setLogger(Logger logger) {
+        this.logger = logger;
     }
 
     /**
@@ -560,6 +580,13 @@ public class Dim {
         interrupted(cx, frame, null);
     }
 
+    private void handleBreakpointConditionException(StackFrame frame, Context cx, Throwable ex) {
+        breakFlag = false;
+        ContextData cd = frame.contextData();
+        cd.lastProcessedException = ex;
+        interrupted(cx, frame, ex);
+    }
+
     /**
      * Called when a script exception has been thrown.
      */
@@ -809,6 +836,9 @@ public class Dim {
      */
     private void interrupted(Context cx, final StackFrame frame,
                                Throwable scriptException) {
+        if (logger != null) {
+            logger.fine("interrupted, context = " + cx + ", frame = " + frame + ", exception = " + scriptException);
+        }
         ContextData contextData = frame.contextData();
         boolean eventThreadFlag = callback.isGuiEventThread();
         contextData.eventThreadFlag = eventThreadFlag;
@@ -1286,6 +1316,11 @@ interruptedCheck:
          * Called when the current position has changed.
          */
         public void onLineChange(Context cx, int lineno) {
+            String url = fsource.sourceInfo().url();
+            long threadId = Thread.currentThread().getId();
+            if (dim.logger != null) {
+                dim.logger.fine("onLineChange, thread id: " + threadId + ", url: " + url + ", cx: " + cx + ", lineno: " + lineno);
+            }
             this.lineNumber = lineno;
 
             boolean checkCondition = true;
@@ -1296,11 +1331,14 @@ interruptedCheck:
                                  <= contextData.stopAtFrameDepth);
                 }
                 if (!lineBreak) {
-                    synchronized (dim.breakContexts) {
-                        if (!dim.breakContexts.contains(cx)) {
+                    synchronized (dim.breakThreadIds) {
+                        if (!dim.breakThreadIds.contains(threadId)) {
                             return;
                         } else {
-                            dim.breakContexts.remove(cx);
+                            if (dim.logger != null) {
+                                dim.logger.fine("breaking on url: " + url + ", context " + cx + ", removing from breakContexts");
+                            }
+                            dim.breakThreadIds.remove(threadId);
                         }
                     }
                 }
@@ -1313,14 +1351,31 @@ interruptedCheck:
 
             boolean hit = true;
             if (checkCondition) {
+                if (dim.logger != null) {
+                    dim.logger.fine("checking condition for breakpoint at line " + lineno + ", url: " + url);
+                }
                 Condition condition = fsource.sourceInfo().getCondition(lineno);
                 if (condition != null) {
-                    if (!condition.shouldBreak(cx, scope, thisObj)) {
-                        hit = false;
+                    try {
+                        if (!condition.shouldBreak(cx, scope, thisObj)) {
+                            if (dim.logger != null) {
+                                dim.logger.fine("skipping breakpoint, condition failed");
+                            }
+                            hit = false;
+                        }
+                    } catch (Exception e) {
+                        if (dim.logger != null) {
+                            dim.logger.fine("caught exception while evaluating condition, breaking and reporting: " + e);
+                        }
+                        dim.handleBreakpointConditionException(this, cx, e);
+                        return;
                     }
                 }
             }
             if (hit) {
+                if (dim.logger != null) {
+                    dim.logger.fine("handlin breakpoint hit for url: " + url + ", context: " + cx);
+                }
                 dim.handleBreakpointHit(this, cx);
             }
         }
