@@ -657,10 +657,7 @@ public class Dim {
             return result;
         }
         ContextData contextData = currentContextData();
-        if (contextData == null || frameIndex >= contextData.frameCount()) {
-            return result;
-        }
-        if (contextData.eventThreadFlag) {
+        if (contextData == null || contextData.eventThreadFlag) {
             Context cx = Context.getCurrentContext();
             result = do_eval(cx, scope, thisObj, expr);
         } else {
