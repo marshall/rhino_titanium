@@ -39,6 +39,9 @@
 
 package org.mozilla.javascript;
 
+import java.util.ArrayList;
+import java.util.List;
+
 /**
  * This class implements the activation object.
  *
@@ -52,6 +55,8 @@ public final class NativeCall extends IdScriptableObject
     static final long serialVersionUID = -7471457301304454454L;
 
     private static final Object CALL_TAG = "Call";
+
+    private ArrayList<String> paramNames = new ArrayList<String>();
 
     static void init(Scriptable scope, boolean sealed)
     {
@@ -79,6 +84,7 @@ public final class NativeCall extends IdScriptableObject
                 Object val = i < args.length ? args[i]
                                              : Undefined.instance;
                 defineProperty(name, val, PERMANENT);
+                paramNames.add(name);
             }
         }
 
@@ -149,6 +155,11 @@ public final class NativeCall extends IdScriptableObject
     public NativeFunction getNativeFunction()
     {
         return function;
+    }
+
+    public List<String> getParamNames()
+    {
+        return paramNames;
     }
 
     private static final int
